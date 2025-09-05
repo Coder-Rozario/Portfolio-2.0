@@ -39,7 +39,7 @@ const transporter = nodemailer.createTransporter({
 
 // Self-pinging function to prevent Render sleep mode (only in production)
 if (process.env.NODE_ENV === 'production') {
-  const SELF_PING_INTERVAL = 14 * 60 * 1000; // 14 minutes (under Render's 15-minute threshold)
+  const SELF_PING_INTERVAL = 14 * 60 * 1000; // 14 minutes
   
   setInterval(() => {
     const backendUrl = process.env.BACKEND_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com`;
@@ -136,7 +136,6 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   
-  // Log self-ping status
   if (process.env.NODE_ENV === 'production') {
     console.log('Self-ping mechanism activated to prevent Render sleep mode');
   }
