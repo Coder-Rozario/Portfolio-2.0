@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const axios = require('axios');
 
 const app = express();
 
@@ -28,12 +29,39 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Email transporter
-const transporter = nodemailer.createTransport({
+const transporter = nodemailer.createTransporter({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+});
+
+// Self-pinging function to prevent Render sleep mode (only in production)
+if (process.env.NODE_ENV === 'production') {
+  const SELF_PING_INTERVAL = 14 * 60 * 1000; // 14 minutes (under Render's 15-minute threshold)
+  
+  setInterval(() => {
+    const backendUrl = process.env.BACKEND_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com`;
+    console.log(`Performing self-ping to: ${backendUrl}/api/health`);
+    
+    axios.get(`${backendUrl}/api/health`)
+      .then(response => {
+        console.log('Self-ping successful:', response.status);
+      })
+      .catch(error => {
+        console.log('Self-ping error:', error.message);
+      });
+  }, SELF_PING_INTERVAL);
+}
+
+// Health check endpoint for monitoring and self-pinging
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
 // Test endpoint
@@ -106,4 +134,10 @@ app.post('/api/messages', async (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Log self-ping status
+  if (process.env.NODE_ENV === 'production') {
+    console.log('Self-ping mechanism activated to prevent Render sleep mode');
+  }
 });
