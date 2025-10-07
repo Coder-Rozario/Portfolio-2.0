@@ -14,7 +14,7 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-// Enhanced CORS configuration
+// CORS configuration - FIXED
 app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
@@ -29,7 +29,6 @@ app.use(cors({
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.log('Blocked by CORS:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -47,14 +46,11 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
+  max: 100 // limit each IP to 100 requests per windowMs
 });
 app.use(limiter);
 
-// Email transporter configuration
+// Email transporter - FIXED: createTransport not createTransporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -63,12 +59,12 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Verify email configuration on startup
+// Test email configuration on startup
 transporter.verify(function (error, success) {
   if (error) {
-    console.log(' Email transporter error:', error);
+    console.log('❌ Email configuration error:', error);
   } else {
-    console.log(' Email transporter is ready to send messages');
+    console.log('✅ Email server is ready to send messages');
   }
 });
 
@@ -85,7 +81,7 @@ app.get('/health', (req, res) => {
 // ==================== CONTACT ENDPOINT ====================
 app.post('/api/messages', async (req, res) => {
   try {
-    console.log('Received contact form submission:', req.body);
+    console.log('📨 Received contact form submission:', req.body);
     
     const { name, number, email, message } = req.body;
 
@@ -140,7 +136,7 @@ app.post('/api/messages', async (req, res) => {
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: process.env.EMAIL_TO,
-      subject: ` New Portfolio Message from ${name}`,
+      subject: `📧 New Portfolio Message from ${name}`,
       html: `
 <!DOCTYPE html>
 <html>
@@ -310,7 +306,7 @@ app.post('/api/messages', async (req, res) => {
     const userConfirmationMail = {
       from: process.env.EMAIL_FROM,
       to: email,
-      subject: 'Thank you for contacting Shuvro Rozario',
+      subject: '✅ Thank you for contacting Shuvro Rozario',
       html: `
 <!DOCTYPE html>
 <html>
@@ -437,8 +433,8 @@ app.post('/api/messages', async (req, res) => {
             <div class="contact-info">
                 <p><strong>Best regards,</strong><br>Shuvro Rozario</p>
                 <div style="margin-top: 15px;">
-                    <a href="mailto:${process.env.EMAIL_USER}"> Email</a>
-                    <a href="https://shuvo-rozario.netlify.app">Portfolio</a>
+                    <a href="mailto:${process.env.EMAIL_USER}">📧 Email</a>
+                    <a href="https://your-portfolio-link.com">🌐 Portfolio</a>
                 </div>
             </div>
             
@@ -460,7 +456,7 @@ app.post('/api/messages', async (req, res) => {
     await transporter.sendMail(mailOptions);
     await transporter.sendMail(userConfirmationMail);
 
-    console.log(`Contact form submitted successfully by: ${name} (${email})`);
+    console.log(`✅ Contact form submitted successfully by: ${name} (${email})`);
 
     res.status(200).json({ 
       success: true,
@@ -468,7 +464,7 @@ app.post('/api/messages', async (req, res) => {
     });
     
   } catch (error) {
-    console.error(' Contact form error:', error);
+    console.error('❌ Contact form error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Failed to send message. Please try again later.',
@@ -569,10 +565,10 @@ app.get('/', (req, res) => {
 
 // ==================== SERVER STARTUP ====================
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(` Portfolio server running on port ${PORT}`);
-  console.log(` Email service: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
-  console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(` CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-  console.log(` Contact endpoints: /api/contact & /api/messages`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Portfolio server running on port ${PORT}`);
+  console.log(`📧 Email service: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+  console.log(`📝 Contact endpoints: /api/contact & /api/messages`);
 });
