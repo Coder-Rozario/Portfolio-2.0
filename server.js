@@ -24,8 +24,8 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Email transporter
-const transporter = nodemailer.createTransporter({
+// Email transporter - FIXED: createTransport not createTransporter
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
@@ -446,14 +446,30 @@ app.get('/api/projects', (req, res) => {
       title: "Yokebud E-commerce",
       description: "Full-stack e-commerce platform with advanced features",
       technologies: ["React", "Node.js", "MySQL", "Cloudinary"],
-      category: "Full Stack"
+      category: "Full Stack",
+      image: "/projects/yokebud.jpg",
+      liveUrl: "https://yokebud.com",
+      githubUrl: "https://github.com/yourusername/yokebud"
     },
     {
       id: 2,
       title: "Portfolio Website",
       description: "Responsive portfolio with contact form and email integration",
       technologies: ["React", "Node.js", "Express", "Nodemailer"],
-      category: "Full Stack"
+      category: "Full Stack",
+      image: "/projects/portfolio.jpg",
+      liveUrl: "https://shuvorozario.com",
+      githubUrl: "https://github.com/yourusername/portfolio"
+    },
+    {
+      id: 3,
+      title: "Task Management App",
+      description: "Real-time task management application with team collaboration",
+      technologies: ["React", "Node.js", "Socket.io", "MongoDB"],
+      category: "Full Stack",
+      image: "/projects/taskapp.jpg",
+      liveUrl: "https://taskapp.example.com",
+      githubUrl: "https://github.com/yourusername/taskapp"
     }
   ];
   
@@ -463,13 +479,86 @@ app.get('/api/projects', (req, res) => {
 // Skills endpoint
 app.get('/api/skills', (req, res) => {
   const skills = {
-    frontend: ["React", "JavaScript", "HTML5", "CSS3", "Tailwind CSS"],
-    backend: ["Node.js", "Express.js", "MySQL", "MongoDB", "REST APIs"],
-    tools: ["Git", "Docker", "AWS", "Cloudinary", "JWT"],
-    other: ["Responsive Design", "UI/UX", "Agile Methodology", "Problem Solving"]
+    frontend: [
+      { name: "React", level: 90 },
+      { name: "JavaScript", level: 85 },
+      { name: "HTML5", level: 95 },
+      { name: "CSS3", level: 90 },
+      { name: "Tailwind CSS", level: 85 }
+    ],
+    backend: [
+      { name: "Node.js", level: 88 },
+      { name: "Express.js", level: 85 },
+      { name: "MySQL", level: 80 },
+      { name: "MongoDB", level: 75 },
+      { name: "REST APIs", level: 90 }
+    ],
+    tools: [
+      { name: "Git", level: 85 },
+      { name: "Docker", level: 70 },
+      { name: "AWS", level: 65 },
+      { name: "Cloudinary", level: 80 },
+      { name: "JWT", level: 85 }
+    ],
+    other: [
+      "Responsive Design",
+      "UI/UX Design",
+      "Agile Methodology", 
+      "Problem Solving",
+      "Team Collaboration",
+      "Project Management"
+    ]
   };
   
   res.json({ success: true, skills });
+});
+
+// Experience endpoint
+app.get('/api/experience', (req, res) => {
+  const experience = [
+    {
+      id: 1,
+      company: "Freelance",
+      position: "Full Stack Developer",
+      period: "2023 - Present",
+      description: "Working on various web development projects including e-commerce platforms, portfolio websites, and custom web applications.",
+      technologies: ["React", "Node.js", "Express", "MySQL", "MongoDB"]
+    },
+    {
+      id: 2,
+      company: "Tech Company",
+      position: "Frontend Developer",
+      period: "2022 - 2023", 
+      description: "Developed and maintained responsive web applications using modern JavaScript frameworks and libraries.",
+      technologies: ["React", "TypeScript", "Redux", "SASS"]
+    }
+  ];
+  
+  res.json({ success: true, experience });
+});
+
+// Testimonials endpoint
+app.get('/api/testimonials', (req, res) => {
+  const testimonials = [
+    {
+      id: 1,
+      name: "John Doe",
+      position: "CEO at TechStart",
+      message: "Shuvro delivered an exceptional e-commerce platform that exceeded our expectations. His attention to detail and problem-solving skills are remarkable.",
+      avatar: "/testimonials/john.jpg",
+      rating: 5
+    },
+    {
+      id: 2,
+      name: "Jane Smith",
+      position: "Project Manager",
+      message: "Working with Shuvro was a great experience. He's professional, skilled, and always delivers on time. Highly recommended!",
+      avatar: "/testimonials/jane.jpg", 
+      rating: 5
+    }
+  ];
+  
+  res.json({ success: true, testimonials });
 });
 
 // ==================== KEEP-ALIVE MECHANISM ====================
@@ -517,7 +606,9 @@ app.get('/', (req, res) => {
       health: '/health',
       contact: '/api/contact',
       projects: '/api/projects',
-      skills: '/api/skills'
+      skills: '/api/skills',
+      experience: '/api/experience',
+      testimonials: '/api/testimonials'
     },
     timestamp: new Date().toISOString()
   });
