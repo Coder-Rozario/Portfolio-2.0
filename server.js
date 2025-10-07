@@ -14,25 +14,13 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-// Enhanced CORS configuration
+// Enhanced CORS configuration for production
 app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      process.env.FRONTEND_URL, 
-      'http://localhost:5173',
-      'https://shuvo-rozario.netlify.app'
-    ];
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'https://shuvo-rozario.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -44,31 +32,35 @@ app.options('*', cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
+// Rate limiting - more generous for production
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 50, // reduced for free tier
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use(limiter);
 
-// Email transporter configuration
+// Email transporter configuration with better error handling
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  // Better timeout settings for production
+  connectionTimeout: 10000,
+  socketTimeout: 15000,
+  greetingTimeout: 10000
 });
 
 // Verify email configuration on startup
 transporter.verify(function (error, success) {
   if (error) {
-    console.log(' Email transporter error:', error);
+    console.log('❌ Email transporter error:', error);
   } else {
-    console.log(' Email transporter is ready to send messages');
+    console.log('✅ Email transporter is ready to send messages');
   }
 });
 
@@ -78,14 +70,29 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    environment: process.env.NODE_ENV,
     message: 'Portfolio server is running smoothly'
+  });
+});
+
+// ==================== WAKE UP ENDPOINT ====================
+app.get('/wakeup', (req, res) => {
+  console.log('🔄 Server wakeup call received');
+  res.status(200).json({ 
+    success: true,
+    message: 'Server is awake and ready',
+    timestamp: new Date().toISOString()
   });
 });
 
 // ==================== CONTACT ENDPOINT ====================
 app.post('/api/messages', async (req, res) => {
   try {
-    console.log('Received contact form submission:', req.body);
+    console.log('📨 Received contact form submission:', { 
+      name: req.body.name, 
+      email: req.body.email,
+      timestamp: new Date().toISOString()
+    });
     
     const { name, number, email, message } = req.body;
 
@@ -140,7 +147,7 @@ app.post('/api/messages', async (req, res) => {
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: process.env.EMAIL_TO,
-      subject: ` New Portfolio Message from ${name}`,
+      subject: `📧 New Portfolio Message from ${name}`,
       html: `
 <!DOCTYPE html>
 <html>
@@ -149,112 +156,20 @@ app.post('/api/messages', async (req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Portfolio Contact</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 20px;
-        }
-        .email-container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        }
-        .email-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 30px 20px;
-            text-align: center;
-            color: white;
-        }
-        .email-header h1 {
-            font-size: 28px;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-        .email-header p {
-            font-size: 16px;
-            opacity: 0.9;
-        }
-        .email-body {
-            padding: 30px;
-        }
-        .contact-info {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 25px;
-            border-left: 4px solid #667eea;
-        }
-        .info-item {
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-        }
-        .info-item:last-child {
-            margin-bottom: 0;
-        }
-        .info-label {
-            font-weight: 600;
-            color: #495057;
-            min-width: 80px;
-        }
-        .info-value {
-            color: #212529;
-            flex: 1;
-        }
-        .message-section {
-            background: #fff;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 20px;
-        }
-        .message-label {
-            font-weight: 600;
-            color: #495057;
-            margin-bottom: 10px;
-            font-size: 16px;
-        }
-        .message-content {
-            color: #212529;
-            line-height: 1.7;
-            white-space: pre-wrap;
-        }
-        .email-footer {
-            background: #f8f9fa;
-            padding: 20px;
-            text-align: center;
-            border-top: 1px solid #e9ecef;
-        }
-        .footer-text {
-            color: #6c757d;
-            font-size: 14px;
-        }
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            background: #28a745;
-            color: white;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-left: 10px;
-        }
-        a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background: #f8f9fa; padding: 20px; }
+        .email-container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .email-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 20px; text-align: center; color: white; }
+        .email-header h1 { font-size: 28px; font-weight: 600; margin-bottom: 10px; }
+        .email-body { padding: 30px; }
+        .contact-info { background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 25px; border-left: 4px solid #667eea; }
+        .info-item { margin-bottom: 12px; display: flex; align-items: center; }
+        .info-label { font-weight: 600; color: #495057; min-width: 80px; }
+        .info-value { color: #212529; flex: 1; }
+        .message-section { background: #fff; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; }
+        .message-label { font-weight: 600; color: #495057; margin-bottom: 10px; }
+        .message-content { color: #212529; line-height: 1.7; white-space: pre-wrap; }
+        .email-footer { background: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #e9ecef; color: #6c757d; }
     </style>
 </head>
 <body>
@@ -263,42 +178,20 @@ app.post('/api/messages', async (req, res) => {
             <h1>🎉 New Portfolio Message</h1>
             <p>Someone reached out through your portfolio website</p>
         </div>
-        
         <div class="email-body">
             <div class="contact-info">
-                <div class="info-item">
-                    <span class="info-label">Name:</span>
-                    <span class="info-value">${name}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Phone:</span>
-                    <span class="info-value">
-                        <a href="tel:${number}">${number}</a>
-                    </span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Email:</span>
-                    <span class="info-value">
-                        <a href="mailto:${email}">${email}</a>
-                    </span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Time:</span>
-                    <span class="info-value">${new Date().toLocaleString()}</span>
-                </div>
+                <div class="info-item"><span class="info-label">Name:</span><span class="info-value">${name}</span></div>
+                <div class="info-item"><span class="info-label">Phone:</span><span class="info-value"><a href="tel:${number}">${number}</a></span></div>
+                <div class="info-item"><span class="info-label">Email:</span><span class="info-value"><a href="mailto:${email}">${email}</a></span></div>
+                <div class="info-item"><span class="info-label">Time:</span><span class="info-value">${new Date().toLocaleString()}</span></div>
             </div>
-            
             <div class="message-section">
                 <div class="message-label">Message Content:</div>
                 <div class="message-content">${message}</div>
             </div>
         </div>
-        
         <div class="email-footer">
-            <p class="footer-text">
-                💼 This message was sent from your portfolio contact form<br>
-                <small>Powered by your portfolio backend service</small>
-            </p>
+            <p>💼 This message was sent from your portfolio contact form</p>
         </div>
     </div>
 </body>
@@ -306,161 +199,15 @@ app.post('/api/messages', async (req, res) => {
       `,
     };
 
-    // Send confirmation email to the user
-    const userConfirmationMail = {
-      from: process.env.EMAIL_FROM,
-      to: email,
-      subject: 'Thank you for contacting Shuvro Rozario',
-      html: `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thank You Message</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f8f9fa;
-            padding: 20px;
-        }
-        .email-container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-        .email-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 40px 20px;
-            text-align: center;
-            color: white;
-        }
-        .email-header h1 {
-            font-size: 32px;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-        .email-body {
-            padding: 40px 30px;
-        }
-        .thank-you-text {
-            font-size: 18px;
-            color: #495057;
-            margin-bottom: 25px;
-            text-align: center;
-        }
-        .next-steps {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 25px;
-            margin: 25px 0;
-        }
-        .next-steps h3 {
-            color: #495057;
-            margin-bottom: 15px;
-            font-size: 20px;
-        }
-        .next-steps ul {
-            list-style: none;
-            padding: 0;
-        }
-        .next-steps li {
-            padding: 8px 0;
-            padding-left: 25px;
-            position: relative;
-        }
-        .next-steps li:before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            color: #28a745;
-            font-weight: bold;
-        }
-        .contact-info {
-            text-align: center;
-            margin-top: 30px;
-            padding-top: 25px;
-            border-top: 1px solid #e9ecef;
-        }
-        .contact-info a {
-            color: #667eea;
-            text-decoration: none;
-            margin: 0 10px;
-        }
-        .contact-info a:hover {
-            text-decoration: underline;
-        }
-        .email-footer {
-            background: #343a40;
-            color: white;
-            padding: 25px;
-            text-align: center;
-        }
-        .signature {
-            margin-top: 25px;
-            font-style: italic;
-            color: #6c757d;
-        }
-    </style>
-</head>
-<body>
-    <div class="email-container">
-        <div class="email-header">
-            <h1>Thank You, ${name}!</h1>
-            <p>I've received your message and will get back to you soon</p>
-        </div>
-        
-        <div class="email-body">
-            <div class="thank-you-text">
-                Thank you for reaching out through my portfolio website. I appreciate you taking the time to contact me.
-            </div>
-            
-            <div class="next-steps">
-                <h3>What happens next?</h3>
-                <ul>
-                    <li>I'll review your message carefully</li>
-                    <li>You'll receive a personalized response within 24 hours</li>
-                    <li>We can schedule a call to discuss your project in detail</li>
-                </ul>
-            </div>
-            
-            <div class="contact-info">
-                <p><strong>Best regards,</strong><br>Shuvro Rozario</p>
-                <div style="margin-top: 15px;">
-                    <a href="mailto:${process.env.EMAIL_USER}"> Email</a>
-                    <a href="https://shuvo-rozario.netlify.app">Portfolio</a>
-                </div>
-            </div>
-            
-            <div class="signature">
-                <small>This is an automated confirmation. Please do not reply to this email.</small>
-            </div>
-        </div>
-        
-        <div class="email-footer">
-            <p>&copy; ${new Date().getFullYear()} Shuvro Rozario. All rights reserved.</p>
-        </div>
-    </div>
-</body>
-</html>
-      `
-    };
+    // Send email with timeout
+    const emailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Email sending timeout')), 10000)
+    );
 
-    // Send both emails
-    await transporter.sendMail(mailOptions);
-    await transporter.sendMail(userConfirmationMail);
+    await Promise.race([emailPromise, timeoutPromise]);
 
-    console.log(`Contact form submitted successfully by: ${name} (${email})`);
+    console.log(`✅ Contact form submitted successfully by: ${name} (${email})`);
 
     res.status(200).json({ 
       success: true,
@@ -468,10 +215,10 @@ app.post('/api/messages', async (req, res) => {
     });
     
   } catch (error) {
-    console.error(' Contact form error:', error);
+    console.error('❌ Contact form error:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to send message. Please try again later.',
+      message: 'Failed to send message. Please try again in a moment.',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -479,59 +226,34 @@ app.post('/api/messages', async (req, res) => {
 
 // Keep the original /api/contact endpoint for backward compatibility
 app.post('/api/contact', async (req, res) => {
-  // Forward to the /api/messages endpoint
   req.url = '/api/messages';
   app.handle(req, res);
 });
 
-// ==================== ADDITIONAL PORTFOLIO ENDPOINTS ====================
-
-// Projects endpoint
+// ==================== SIMPLIFIED PORTFOLIO ENDPOINTS ====================
 app.get('/api/projects', (req, res) => {
-  const projects = [
-    {
-      id: 1,
-      title: "Yokebud E-commerce",
-      description: "Full-stack e-commerce platform with advanced features",
-      technologies: ["React", "Node.js", "MySQL", "Cloudinary"],
-      category: "Full Stack",
-      image: "/projects/yokebud.jpg",
-      liveUrl: "https://yokebud.com",
-      githubUrl: "https://github.com/yourusername/yokebud"
-    },
-    {
-      id: 2,
-      title: "Portfolio Website",
-      description: "Responsive portfolio with contact form and email integration",
-      technologies: ["React", "Node.js", "Express", "Nodemailer"],
-      category: "Full Stack",
-      image: "/projects/portfolio.jpg",
-      liveUrl: "https://shuvorozario.com",
-      githubUrl: "https://github.com/yourusername/portfolio"
-    }
-  ];
-  
-  res.json({ success: true, projects });
+  res.json({ 
+    success: true, 
+    projects: [
+      {
+        id: 1,
+        title: "Yokebud E-commerce",
+        description: "Full-stack e-commerce platform",
+        technologies: ["React", "Node.js", "MySQL"],
+        category: "Full Stack"
+      }
+    ]
+  });
 });
 
-// Skills endpoint
 app.get('/api/skills', (req, res) => {
-  const skills = {
-    frontend: [
-      { name: "React", level: 90 },
-      { name: "JavaScript", level: 85 },
-      { name: "HTML5", level: 95 },
-      { name: "CSS3", level: 90 }
-    ],
-    backend: [
-      { name: "Node.js", level: 88 },
-      { name: "Express.js", level: 85 },
-      { name: "MySQL", level: 80 },
-      { name: "MongoDB", level: 75 }
-    ]
-  };
-  
-  res.json({ success: true, skills });
+  res.json({ 
+    success: true, 
+    skills: {
+      frontend: ["React", "JavaScript", "HTML5", "CSS3"],
+      backend: ["Node.js", "Express.js", "MySQL"]
+    }
+  });
 });
 
 // ==================== ERROR HANDLING ====================
@@ -539,8 +261,7 @@ app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
   res.status(500).json({ 
     success: false, 
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    message: 'Internal server error'
   });
 });
 
@@ -557,12 +278,7 @@ app.get('/', (req, res) => {
   res.json({
     success: true,
     message: 'Portfolio Backend Server is running!',
-    endpoints: {
-      health: '/health',
-      contact: '/api/contact & /api/messages',
-      projects: '/api/projects',
-      skills: '/api/skills'
-    },
+    environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString()
   });
 });
@@ -570,9 +286,7 @@ app.get('/', (req, res) => {
 // ==================== SERVER STARTUP ====================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(` Portfolio server running on port ${PORT}`);
-  console.log(` Email service: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
-  console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(` CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-  console.log(` Contact endpoints: /api/contact & /api/messages`);
+  console.log(`🚀 Portfolio server running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📧 Email service: ${process.env.EMAIL_USER ? 'Configured' : 'Not configured'}`);
 });
