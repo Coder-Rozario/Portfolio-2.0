@@ -14,19 +14,22 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-// CORS configuration - FIXED
+// CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
-      process.env.FRONTEND_URL, 
+      process.env.FRONTEND_URL,
       'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:5174',
       'https://shuvo-rozario.netlify.app'
     ];
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+
+    const isLocalhost = !!origin && /^http:\/\/localhost:\d+$/.test(origin);
+    const isLoopback = !!origin && /^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
+
+    if (!origin || allowedOrigins.includes(origin) || isLocalhost || isLoopback) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -53,6 +56,11 @@ app.use(limiter);
 // Email transporter - FIXED: createTransport not createTransporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
+  pool: true,
+  maxConnections: 2,
+  maxMessages: Infinity,
+  connectionTimeout: 15000,
+  socketTimeout: 20000,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -302,7 +310,6 @@ app.post('/api/messages', async (req, res) => {
       `,
     };
 
-    // Send confirmation email to the user
     const userConfirmationMail = {
       from: process.env.EMAIL_FROM,
       to: email,
@@ -452,15 +459,21 @@ app.post('/api/messages', async (req, res) => {
       `
     };
 
-    // Send both emails
-    await transporter.sendMail(mailOptions);
-    await transporter.sendMail(userConfirmationMail);
-
-    console.log(`✅ Contact form submitted successfully by: ${name} (${email})`);
-
     res.status(200).json({ 
       success: true,
-      message: 'Message sent successfully! You should receive a confirmation email shortly.' 
+      message: 'Message received! A confirmation email will arrive shortly.' 
+    });
+
+    setImmediate(async () => {
+      try {
+        const results = await Promise.allSettled([
+          transporter.sendMail(mailOptions),
+          transporter.sendMail(userConfirmationMail)
+        ]);
+        console.log(`✅ Contact queued: ${name} (${email})`, results.map(r => r.status));
+      } catch (err) {
+        console.error('❌ Email dispatch error:', err);
+      }
     });
     
   } catch (error) {
@@ -571,4 +584,17 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
   console.log(`📝 Contact endpoints: /api/contact & /api/messages`);
+  const keepAliveUrl = process.env.KEEP_ALIVE_URL || `http://localhost:${PORT}/health`;
+  const ping = () => {
+    try {
+      const client = keepAliveUrl.startsWith('https') ? require('https') : require('http');
+      const req = client.get(keepAliveUrl, (res) => {
+        res.resume();
+      });
+      req.on('error', () => {});
+      req.setTimeout(8000, () => req.destroy());
+    } catch {}
+  };
+  setInterval(ping, 14 * 60 * 1000);
+  ping();
 });
