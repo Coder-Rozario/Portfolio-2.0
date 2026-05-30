@@ -37,7 +37,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
 
 // Handle preflight requests
@@ -119,7 +119,7 @@ app.post('/api/messages', async (req, res) => {
     }
 
     // Phone number validation (basic)
-    if (number.trim().length < 10) {
+    if (String(number).trim().length < 10) {
       return res.status(400).json({ 
         success: false,
         message: 'Please provide a valid phone number' 
@@ -451,7 +451,7 @@ app.post('/api/messages', async (req, res) => {
         </div>
         
         <div class="email-footer">
-            <p>&copy; ${new Date().getFullYear()} Shuvro Rozario. All rights reserved.</p>
+            <p>© ${new Date().getFullYear()} Shuvro Rozario. All rights reserved.</p>
         </div>
     </div>
 </body>
@@ -459,26 +459,27 @@ app.post('/api/messages', async (req, res) => {
       `
     };
 
-    res.status(200).json({ 
+    // Render/Hostinger এর জন্য Response পাঠানোর আগে ইমেইল ডেলিভারি সম্পন্ন করুন
+    const results = await Promise.allSettled([
+      transporter.sendMail(mailOptions),
+      transporter.sendMail(userConfirmationMail)
+    ]);
+    
+    console.log(`✅ Email process status for ${name}:`, results.map(r => r.status));
+
+    // যদি দুটি ইমেইল পাঠানোই ব্যর্থ হয় তবে ক্যাচ ব্লকে পাঠাবে
+    if (results[0].status === 'rejected' && results[1].status === 'rejected') {
+      throw new Error(`Email dispatch failed entirely. Reason: ${results[0].reason?.message}`);
+    }
+
+    return res.status(200).json({ 
       success: true,
       message: 'Message received! A confirmation email will arrive shortly.' 
-    });
-
-    setImmediate(async () => {
-      try {
-        const results = await Promise.allSettled([
-          transporter.sendMail(mailOptions),
-          transporter.sendMail(userConfirmationMail)
-        ]);
-        console.log(`✅ Contact queued: ${name} (${email})`, results.map(r => r.status));
-      } catch (err) {
-        console.error('❌ Email dispatch error:', err);
-      }
     });
     
   } catch (error) {
     console.error('❌ Contact form error:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       success: false,
       message: 'Failed to send message. Please try again later.',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -584,6 +585,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
   console.log(`📝 Contact endpoints: /api/contact & /api/messages`);
+  
   const keepAliveUrl = process.env.KEEP_ALIVE_URL || `http://localhost:${PORT}/health`;
   const ping = () => {
     try {
