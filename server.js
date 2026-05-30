@@ -2,9 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
-const axios = require('axios'); // Nodemailer এর পরিবর্তে axios ব্যবহার করা হয়েছে
 
 const app = express();
 
@@ -69,34 +69,33 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// ==================== BREVO API EMAIL FUNCTION ====================
-// SMTP পোর্ট ব্লকিং এড়াতে সরাসরি HTTP API কল করা হচ্ছে
-const sendEmailViaBrevoAPI = async (toEmail, subject, htmlContent) => {
-  try {
-    const response = await axios.post(
-      'https://api.brevo.com/v3/smtp/email',
-      {
-        sender: { 
-          email: process.env.EMAIL_FROM // আপনার Brevo অ্যাকাউন্টের ভেরিফাইড প্রেরক ইমেইল
-        },
-        to: [{ email: toEmail }],
-        subject: subject,
-        htmlContent: htmlContent,
-      },
-      {
-        headers: {
-          'accept': 'application/json',
-          'api-key': process.env.EMAIL_PASS, // আপনার Brevo API Key
-          'content-type': 'application/json',
-        },
-      }
-    );
-    return { success: true, data: response.data };
-  } catch (error) {
-    console.error('❌ Brevo API Error Detail:', error.response ? error.response.data : error.message);
-    return { success: false, error: error.message };
+// ==================== BREVO SMTP CONFIGURATION (UPDATED) ====================
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com', // Brevo SMTP Server
+  port: 587,                    // Brevo TLS Port
+  secure: false,                // 587 পোর্টের জন্য false হবে, কিন্তু STARTTLS ব্যবহার করবে
+  pool: true,
+  maxConnections: 2,
+  maxMessages: Infinity,
+  connectionTimeout: 15000,
+  socketTimeout: 20000,
+  auth: {
+    user: process.env.EMAIL_USER, // Render-এর Environment-এ থাকবে: ad07a4001@smtp-brevo.com
+    pass: process.env.EMAIL_PASS, // Render-এর Environment-এ থাকবে আপনার Brevo API Key
+  },
+  tls: {
+    rejectUnauthorized: false   // Render ক্লাউড এনভায়রনমেন্টে কানেকশন সিকিউর রাখার জন্য
   }
-};
+});
+
+// Test email configuration on startup
+transporter.verify(function (error, success) {
+  if (error) {
+    console.log('❌ Email configuration error:', error);
+  } else {
+    console.log('✅ Brevo SMTP server is ready to send messages');
+  }
+});
 
 // ==================== HEALTH CHECK ENDPOINT ====================
 app.get('/health', (req, res) => {
@@ -147,79 +146,130 @@ const handleContactForm = async (req, res) => {
     const safeEmail = escapeHTML(email.trim());
     const safeMessage = escapeHTML(message.trim());
 
-    // ১. আপনার নিজের জন্য অ্যাডমিন ইমেইল টেমপ্লেট
-    const adminHtml = `
+    // ⚠️ গুরুত্বপূর্ণ নোট: EMAIL_FROM অবশ্যই আপনার Brevo অ্যাকাউন্টে "Sender" হিসেবে ভেরিফাইড ইমেইলটি হতে হবে।
+    const mailOptions = {
+      from: process.env.EMAIL_FROM, 
+      to: process.env.EMAIL_TO,
+      subject: `📧 New Portfolio Message from ${safeName}`,
+      html: `
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Portfolio Contact</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; color: #333; background: #f4f6f9; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .header { background: #764ba2; color: white; padding: 15px; border-radius: 6px; text-align: center; font-size: 20px; font-weight: bold; }
-        .info-box { background: #f8f9fa; border-left: 4px solid #764ba2; padding: 15px; margin: 20px 0; }
-        .msg-box { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 6px; white-space: pre-wrap; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #333; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; }
+        .email-container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
+        .email-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 20px; text-align: center; color: white; }
+        .email-header h1 { font-size: 28px; font-weight: 600; margin-bottom: 10px; }
+        .email-body { padding: 30px; }
+        .contact-info { background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 25px; border-left: 4px solid #667eea; }
+        .info-item { margin-bottom: 12px; display: flex; }
+        .info-label { font-weight: 600; color: #495057; min-width: 80px; }
+        .info-value { color: #212529; flex: 1; }
+        .message-section { background: #fff; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; }
+        .message-label { font-weight: 600; color: #495057; margin-bottom: 10px; font-size: 16px; }
+        .message-content { color: #212529; white-space: pre-wrap; }
+        .email-footer { background: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #e9ecef; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">🎉 New Portfolio Message</div>
-        <div class="info-box">
-            <p><strong>Name:</strong> ${safeName}</p>
-            <p><strong>Phone:</strong> ${safeNumber}</p>
-            <p><strong>Email:</strong> ${safeEmail}</p>
-            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+    <div class="email-container">
+        <div class="email-header">
+            <h1>🎉 New Portfolio Message</h1>
+            <p>Someone reached out through your portfolio website</p>
         </div>
-        <div class="msg-box"><strong>Message Content:</strong><br><br>${safeMessage}</div>
+        <div class="email-body">
+            <div class="contact-info">
+                <div class="info-item"><span class="info-label">Name:</span><span class="info-value">${safeName}</span></div>
+                <div class="info-item"><span class="info-label">Phone:</span><span class="info-value"><a href="tel:${safeNumber}">${safeNumber}</a></span></div>
+                <div class="info-item"><span class="info-label">Email:</span><span class="info-value"><a href="mailto:${safeEmail}">${safeEmail}</a></span></div>
+                <div class="info-item"><span class="info-label">Time:</span><span class="info-value">${new Date().toLocaleString()}</span></div>
+            </div>
+            <div class="message-section">
+                <div class="message-label">Message Content:</div>
+                <div class="message-content">${safeMessage}</div>
+            </div>
+        </div>
+        <div class="email-footer">
+            <p style="color: #6c757d; font-size: 14px;">💼 Sent from portfolio contact form</p>
+        </div>
     </div>
 </body>
 </html>
-    `;
+      `,
+    };
 
-    // ২. ভিজিটরের জন্য কনফার্মেশন ইমেইল টেমপ্লেট
-    const userHtml = `
+    const userConfirmationMail = {
+      from: process.env.EMAIL_FROM,
+      to: email,
+      subject: '✅ Thank you for contacting Shuvro Rozario',
+      html: `
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thank You Message</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; color: #333; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 30px; }
-        .header { text-align: center; color: #667eea; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
-        .footer { text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; font-size: 14px; color: #777; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #333; background: #f8f9fa; padding: 20px; }
+        .email-container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1); }
+        .email-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; color: white; }
+        .email-body { padding: 40px 30px; }
+        .next-steps { background: #f8f9fa; border-radius: 8px; padding: 25px; margin: 25px 0; }
+        .next-steps ul { list-style: none; padding: 0; }
+        .next-steps li { padding: 8px 0; padding-left: 25px; position: relative; }
+        .next-steps li:before { content: "✓"; position: absolute; left: 0; color: #28a745; font-weight: bold; }
+        .email-footer { background: #343a40; color: white; padding: 25px; text-align: center; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">Thank You, ${safeName}!</div>
-        <p>I have successfully received your message sent through my portfolio website.</p>
-        <p>I will review your inquiry carefully and get back to you within 24 hours.</p>
-        <br>
-        <p>Best regards,</p>
-        <p><strong>Shuvro Rozario</strong></p>
-        <div class="footer">© ${new Date().getFullYear()} Shuvro Rozario. All rights reserved.</div>
+    <div class="email-container">
+        <div class="email-header">
+            <h1>Thank You, ${safeName}!</h1>
+            <p>I've received your message and will get back to you soon</p>
+        </div>
+        <div class="email-body">
+            <p style="font-size: 16px; color: #495057; text-align: center;">I appreciate you taking the time to contact me through my portfolio website.</p>
+            <div class="next-steps">
+                <h3>What happens next?</h3>
+                <ul>
+                    <li>I'll review your message carefully</li>
+                    <li>You'll receive a response within 24 hours</li>
+                </ul>
+            </div>
+            <div style="text-align: center; margin-top: 30px;">
+                <p><strong>Best regards,</strong><br>Shuvro Rozario</p>
+            </div>
+        </div>
+        <div class="email-footer">
+            <p>© ${new Date().getFullYear()} Shuvro Rozario. All rights reserved.</p>
+        </div>
     </div>
 </body>
 </html>
-    `;
+      `
+    };
 
-    // API এর মাধ্যমে দুটি ইমেইল পাঠানো
+    // Deliver emails concurrently
     const results = await Promise.allSettled([
-      sendEmailViaBrevoAPI(process.env.EMAIL_TO, `📧 New Portfolio Message from ${safeName}`, adminHtml),
-      sendEmailViaBrevoAPI(email, '✅ Thank you for contacting Shuvro Rozario', userHtml)
+      transporter.sendMail(mailOptions),
+      transporter.sendMail(userConfirmationMail)
     ]);
     
-    console.log(`✅ Email API process status for ${safeName}:`, results.map(r => r.status));
+    console.log(`✅ Email process status for ${safeName}:`, results.map(r => r.status));
 
-    // যদি অন্তত একটি মেইলও সফলভাবে চলে যায়
-    if (results[0].status === 'fulfilled' && results[0].value.success) {
-      return res.status(200).json({ 
-        success: true,
-        message: 'Message received! A confirmation email will arrive shortly.' 
-      });
-    } else {
-      throw new Error('Email dispatch failed via Brevo API.');
+    if (results[0].status === 'rejected' && results[1].status === 'rejected') {
+      throw new Error(`Email dispatch failed entirely.`);
     }
+
+    return res.status(200).json({ 
+      success: true,
+      message: 'Message received! A confirmation email will arrive shortly.' 
+    });
     
   } catch (error) {
     console.error('❌ Contact form error:', error);
@@ -230,7 +280,6 @@ const handleContactForm = async (req, res) => {
   }
 };
 
-// Map both endpoints to the safe handler function
 app.post('/api/messages', handleContactForm);
 app.post('/api/contact', handleContactForm);
 
