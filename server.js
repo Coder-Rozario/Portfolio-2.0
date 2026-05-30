@@ -29,7 +29,7 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-// CORS configuration - FIXED: Secure RegEx implementation
+// CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
@@ -41,7 +41,6 @@ app.use(cors({
       'https://shuvo-rozario.netlify.app'
     ];
 
-    // Secure checks for localhost and loopback IPs
     const isLocalhost = !!origin && /^http:\/\/localhost(:\d+)?$/.test(origin);
     const isLoopback = !!origin && /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin);
 
@@ -70,22 +69,22 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Email transporter
+// ==================== BREVO SMTP CONFIGURATION (UPDATED) ====================
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',  
-  port: 465,               
-  secure: true,           
+  host: 'smtp-relay.brevo.com', // Brevo SMTP Server
+  port: 587,                    // Brevo TLS Port
+  secure: false,                // 587 পোর্টের জন্য false হবে, কিন্তু STARTTLS ব্যবহার করবে
   pool: true,
   maxConnections: 2,
   maxMessages: Infinity,
   connectionTimeout: 15000,
   socketTimeout: 20000,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.EMAIL_USER, // Render-এর Environment-এ থাকবে: ad07a4001@smtp-brevo.com
+    pass: process.env.EMAIL_PASS, // Render-এর Environment-এ থাকবে আপনার Brevo API Key
   },
   tls: {
-    rejectUnauthorized: false 
+    rejectUnauthorized: false   // Render ক্লাউড এনভায়রনমেন্টে কানেকশন সিকিউর রাখার জন্য
   }
 });
 
@@ -94,7 +93,7 @@ transporter.verify(function (error, success) {
   if (error) {
     console.log('❌ Email configuration error:', error);
   } else {
-    console.log('✅ Email server is ready to send messages');
+    console.log('✅ Brevo SMTP server is ready to send messages');
   }
 });
 
@@ -109,7 +108,6 @@ app.get('/health', (req, res) => {
 });
 
 // ==================== CONTACT LOGIC FUNCTION ====================
-// Fixed: Separate logic to avoid app.handle() breakdown
 const handleContactForm = async (req, res) => {
   try {
     console.log('📨 Received contact form submission:', req.body);
@@ -118,60 +116,39 @@ const handleContactForm = async (req, res) => {
 
     // Enhanced validation
     if (!name || !number || !email || !message) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'All fields are required' 
-      });
+      return res.status(400).json({ success: false, message: 'All fields are required' });
     }
 
-    // Name validation
     if (name.trim().length < 2) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Name must be at least 2 characters long' 
-      });
+      return res.status(400).json({ success: false, message: 'Name must be at least 2 characters long' });
     }
 
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Please provide a valid email address' 
-      });
+      return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
     }
 
-    // Phone number validation (basic)
     if (String(number).trim().length < 10) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Please provide a valid phone number' 
-      });
+      return res.status(400).json({ success: false, message: 'Please provide a valid phone number' });
     }
 
-    // Message length validation
     if (message.trim().length < 10) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Message must be at least 10 characters long' 
-      });
+      return res.status(400).json({ success: false, message: 'Message must be at least 10 characters long' });
     }
 
     if (message.trim().length > 1000) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Message must be less than 1000 characters' 
-      });
+      return res.status(400).json({ success: false, message: 'Message must be less than 1000 characters' });
     }
 
-    // SEXT / XSS Protection: Escaping inputs before putting into HTML
+    // XSS Protection
     const safeName = escapeHTML(name.trim());
     const safeNumber = escapeHTML(String(number).trim());
     const safeEmail = escapeHTML(email.trim());
     const safeMessage = escapeHTML(message.trim());
 
+    // ⚠️ গুরুত্বপূর্ণ নোট: EMAIL_FROM অবশ্যই আপনার Brevo অ্যাকাউন্টে "Sender" হিসেবে ভেরিফাইড ইমেইলটি হতে হবে।
     const mailOptions = {
-      from: process.env.EMAIL_FROM,
+      from: process.env.EMAIL_FROM, 
       to: process.env.EMAIL_TO,
       subject: `📧 New Portfolio Message from ${safeName}`,
       html: `
@@ -277,7 +254,7 @@ const handleContactForm = async (req, res) => {
       `
     };
 
-    // Deliver emails concurrently before sending HTTP response
+    // Deliver emails concurrently
     const results = await Promise.allSettled([
       transporter.sendMail(mailOptions),
       transporter.sendMail(userConfirmationMail)
@@ -303,12 +280,10 @@ const handleContactForm = async (req, res) => {
   }
 };
 
-// Map both endpoints to the safe handler function
 app.post('/api/messages', handleContactForm);
 app.post('/api/contact', handleContactForm);
 
 // ==================== ADDITIONAL PORTFOLIO ENDPOINTS ====================
-
 app.get('/api/projects', (req, res) => {
   const projects = [
     {
@@ -356,17 +331,11 @@ app.get('/api/skills', (req, res) => {
 // ==================== ERROR HANDLING ====================
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
-  res.status(500).json({ 
-    success: false, 
-    message: 'Internal server error'
-  });
+  res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
 app.use('/api/*', (req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    message: 'API endpoint not found' 
-  });
+  res.status(404).json({ success: false, message: 'API endpoint not found' });
 });
 
 app.get('/', (req, res) => {
