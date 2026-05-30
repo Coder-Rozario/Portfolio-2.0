@@ -144,7 +144,7 @@ app.post('/api/messages', async (req, res) => {
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: process.env.EMAIL_TO,
-      subject: `📧 New Portfolio Message from ${name}`,
+      subject: `New Portfolio Message from ${name}`,
       html: `
 <!DOCTYPE html>
 <html>
@@ -264,7 +264,7 @@ app.post('/api/messages', async (req, res) => {
 <body>
     <div class="email-container">
         <div class="email-header">
-            <h1>🎉 New Portfolio Message</h1>
+            <h1>New Portfolio Message</h1>
             <p>Someone reached out through your portfolio website</p>
         </div>
         
